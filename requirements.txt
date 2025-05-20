@@ -12,4 +12,3 @@ torchvision==0.15.0+cpu
 # video + imaging
 opencv-python-headless==4.7.0.68
 pillow==9.2.0
-
