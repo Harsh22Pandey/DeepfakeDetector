@@ -92,23 +92,15 @@ if uploaded_file:
             model.eval()
 
             # Inference
-            '''
+            
             with torch.no_grad():
                 output = model(sequence)
                 prediction = torch.sigmoid(output).item()
 
-            st.success(f"Prediction: {'Deepfake' if prediction > 0.5 else 'Real'} ({prediction:.4f})")
-            '''
+            st.success(f"Prediction: {'Deepfake' if prediction > 0.5 else 'Real'} ({prediction * 100:.2f}%)")
+
+            
 
 
 
-            # Inference
-            with torch.no_grad():
-                output = model(sequence)
-                prediction = torch.sigmoid(output).item()
-
-            # Convert to percentage
-            prediction_percent = prediction * 100
-
-            st.success(f"Prediction: {'Deepfake' if prediction > 0.5 else 'Real'} ({prediction_percent:.2f}%)")
-
+           
