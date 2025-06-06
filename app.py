@@ -60,7 +60,7 @@ def extract_frames(video_path, transform, sequence_length=10, fps=5):
 # ----------------------------
 # Streamlit App
 # ----------------------------
-st.title("Deepfake Video Detector (CNN + LSTM)")
+st.title("Deepfake Video Detector")
 
 uploaded_file = st.file_uploader("Upload a .mp4 video", type=["mp4"])
 
@@ -92,8 +92,23 @@ if uploaded_file:
             model.eval()
 
             # Inference
+            '''
             with torch.no_grad():
                 output = model(sequence)
                 prediction = torch.sigmoid(output).item()
 
             st.success(f"Prediction: {'Deepfake' if prediction > 0.5 else 'Real'} ({prediction:.4f})")
+            '''
+
+
+
+            # Inference
+            with torch.no_grad():
+                output = model(sequence)
+                prediction = torch.sigmoid(output).item()
+
+            # Convert to percentage
+            prediction_percent = prediction * 100
+
+            st.success(f"Prediction: {'Deepfake' if prediction > 0.5 else 'Real'} ({prediction_percent:.2f}%)")
+
