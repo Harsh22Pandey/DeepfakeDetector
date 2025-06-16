@@ -234,7 +234,7 @@ if uploaded_file:
 
     # Extract frames
     with st.spinner('Extracting frames and analyzing...'):
-        sequences = extract_frames(video_path, transform, sequence_length=10, fps=5)
+        sequences = extract_frames(video_path, transform, sequence_length=20, fps=5)
 
         if sequences is None:
             st.error("Not enough frames in the video to form sequences.")
