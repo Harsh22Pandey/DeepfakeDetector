@@ -180,6 +180,11 @@ def extract_frames(video_path, transform, sequence_length=10, fps=5):
 # ----------------------------
 st.title("Deepfake Video Detector")
 
+# Always display a default video
+st.markdown("Demo Video")
+st.video("/workspaces/DeepfakeDetector/Trump_and_Navalny_1080p.mp4")
+
+
 uploaded_file = st.file_uploader("Upload a .mp4 video", type=["mp4"])
 
 if uploaded_file:
@@ -188,6 +193,10 @@ if uploaded_file:
         video_path = temp_video.name
 
     st.video(uploaded_file)
+
+
+
+
 
     # Define transform
     transform = transforms.Compose([
