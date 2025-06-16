@@ -255,7 +255,12 @@ if uploaded_file:
 
             # Aggregate the predictions (e.g., take the average)
             avg_prediction = np.mean(predictions)
+            if avg_prediction > 0.5:
+                st.success(f"Prediction: Deepfake ({avg_prediction * 100:.2f}% confidence)")
+            else:
+                 st.success(f"Prediction: Real ({(1 - avg_prediction) * 100:.2f}% confidence)")
+
             
-            st.success(f"Prediction: {'Deepfake' if avg_prediction > 0.5 else 'Real'} ({avg_prediction * 100:.2f}%)")
+            # st.success(f"Prediction: {'Deepfake' if avg_prediction > 0.5 else 'Real'} ({avg_prediction * 100:.2f}%)")
 
            
