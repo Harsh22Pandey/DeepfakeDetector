@@ -117,6 +117,11 @@ import os
 from PIL import Image
 import numpy as np
 
+
+
+st.set_page_config(layout="wide")
+
+
 # ----------------------------
 # Model Definition (Same as Training)
 # ----------------------------
