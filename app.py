@@ -186,14 +186,14 @@ def extract_frames(video_path, transform, sequence_length=10, fps=5):
 st.title("Deepfake Video Detector")
 
 # Make two columns for video and description
-col1, col2 = st.columns([1, 2])  # 1:2 ratio for better balance
+col1, col2 = st.columns([1, 1])  # 1:2 ratio for better balance
 
 with col1:
     st.video("/workspaces/DeepfakeDetector/Trump_and_Navalny_1080p.mp4")
 
 with col2:
     st.markdown("""
-    ## Enemy at the Gates  
+    ## <h1>Enemy at the Gates</h1>  
     The video on the left shows an example of deepfake of Alexei Navalny and Donald Trump.  
 
     Cybersecurity is facing an emerging threat generally known as **deepfakes**.  
