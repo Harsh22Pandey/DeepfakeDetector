@@ -183,25 +183,35 @@ def extract_frames(video_path, transform, sequence_length=10, fps=5):
 # ----------------------------
 # Streamlit App
 # ----------------------------
-st.title("Deepfake Video Detector")
+st.markdown(
+    "<h1 style='text-align: center; font-size: 60px;color: white; margin-bottom:10px'>Deepfake Video Detector</h1>",
+    unsafe_allow_html=True
+)
+
 
 # Make two columns for video and description
-col1, col2 = st.columns([1, 1])  # 1:2 ratio for better balance
+col1, col2 = st.columns([1, 1])  # 1:1 ratio for better balance
 
 with col1:
     st.video("/workspaces/DeepfakeDetector/Trump_and_Navalny_1080p.mp4")
 
 with col2:
     st.markdown("""
-    ## <h1>Enemy at the Gates</h1>  
-    The video on the left shows an example of deepfake of Alexei Navalny and Donald Trump.  
+    ## Enemy at the Gates
+    On the left we can see an example of deepfake of Alexei Navalny and Donald Trump.  
 
-    Cybersecurity is facing an emerging threat generally known as **deepfakes**.  
-    Malicious uses of AI-generated synthetic media,  
-    the most powerful cyber-weapon in history is just around the corner.
-    """)
+    <h4>Cybersecurity is facing an emerging threat generally known as "Deepfakes".  
+    Malicious uses of AI-generated synthetic media, one of 
+    the most powerful cyber-weapon in history is just around the corner.</h4>
+    """,unsafe_allow_html=True)
 
-uploaded_file = st.file_uploader("Upload a .mp4 video", type=["mp4"])
+
+
+
+# Add space before uploader
+st.markdown("<div style='margin-top: 50px;'></div>", unsafe_allow_html=True)
+
+uploaded_file = st.file_uploader("", type=["mp4"])
 
 if uploaded_file:
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video:
