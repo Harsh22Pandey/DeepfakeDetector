@@ -159,12 +159,10 @@
 
 
 
-
 import streamlit as st
 import torch
 import torch.nn as nn
 from torchvision import transforms
-from torchvision.models import resnet50, ResNet50_Weights
 import tempfile
 import cv2
 from PIL import Image
@@ -174,26 +172,39 @@ import gdown
 import time
 import math
 import random
+import mediapipe as mp
+from torchvision.models import efficientnet_b4, EfficientNet_B4_Weights
 
 st.set_page_config(layout="wide")
 
+
 # ----------------------------
-# Model Definition
+# Model Definition (EfficientNet-B4 + LSTM + Attention)
 # ----------------------------
 class FaceSwapDetector(nn.Module):
     def __init__(self, hidden_size=256, num_layers=1, bidirectional=True):
         super(FaceSwapDetector, self).__init__()
-        weights = ResNet50_Weights.IMAGENET1K_V1
-        base_model = resnet50(weights=weights)
-        for name, param in base_model.named_parameters():
-            param.requires_grad = "layer4" in name
+        weights = EfficientNet_B4_Weights.IMAGENET1K_V1
+        base_model = efficientnet_b4(weights=weights)
 
-        self.feature_extractor = nn.Sequential(*list(base_model.children())[:-1])
+        for idx, layer in enumerate(base_model.features):
+            if idx <= 4:
+                for param in layer.parameters():
+                    param.requires_grad = False
+            else:
+                for param in layer.parameters():
+                    param.requires_grad = True
+
+        self.feature_extractor = nn.Sequential(
+            base_model.features,
+            base_model.avgpool
+        )
+
         self.hidden_size = hidden_size
         self.num_directions = 2 if bidirectional else 1
 
         self.lstm = nn.LSTM(
-            input_size=2048,
+            input_size=1792,
             hidden_size=hidden_size,
             num_layers=num_layers,
             batch_first=True,
@@ -211,46 +222,77 @@ class FaceSwapDetector(nn.Module):
             nn.Linear(hidden_size * self.num_directions, 1)
         )
 
-    def forward(self, x):
+    def forward(self, x):  # [B, T, 3, 380, 380]
         B, T, C, H, W = x.size()
         x = x.view(B * T, C, H, W)
-        features = self.feature_extractor(x).view(B, T, -1)
+        features = self.feature_extractor(x)  # [B*T, 1792, 1, 1]
+        features = features.view(B, T, -1)    # [B, T, 1792]
+
         lstm_out, _ = self.lstm(features)
         attn_scores = self.attention_layer(lstm_out)
         attn_weights = torch.softmax(attn_scores, dim=1)
         context_vector = torch.sum(attn_weights * lstm_out, dim=1)
-        return self.classifier(context_vector)
+        out = self.classifier(context_vector)
+        return out
 
 
 # ----------------------------
-# Extract Sequences
+# Mediapipe-based Face Extraction
 # ----------------------------
-def extract_sequences(video_path, transform, sequence_length=20, fps=3):
+def extract_faces_from_video(
+    video_path,
+    transform,
+    fps=7,
+    padding=20,
+    resize_dim=(380, 380)
+):
+    mp_face_detection = mp.solutions.face_detection
+    detector = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.7)
+
     cap = cv2.VideoCapture(video_path)
-    frames = []
+    faces = []
     count = 0
     actual_fps = cap.get(cv2.CAP_PROP_FPS)
-    interval = int(actual_fps // fps) if actual_fps > fps else 1
+    interval = max(int(actual_fps // fps), 1)
 
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
+
         if count % interval == 0:
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            image = Image.fromarray(frame)
-            image = transform(image)
-            frames.append(image)
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = detector.process(rgb_frame)
+
+            if results.detections:
+                ih, iw, _ = frame.shape
+                for detection in results.detections:
+                    bboxC = detection.location_data.relative_bounding_box
+                    x1 = int(bboxC.xmin * iw) - padding
+                    y1 = int(bboxC.ymin * ih) - padding
+                    x2 = int((bboxC.xmin + bboxC.width) * iw) + padding
+                    y2 = int((bboxC.ymin + bboxC.height) * ih) + padding
+
+                    x1 = max(0, x1)
+                    y1 = max(0, y1)
+                    x2 = min(iw - 1, x2)
+                    y2 = min(ih - 1, y2)
+
+                    face_crop = frame[y1:y2, x1:x2]
+                    if face_crop.size == 0:
+                        continue
+
+                    if resize_dim:
+                        face_crop = cv2.resize(face_crop, resize_dim)
+
+                    pil_face = Image.fromarray(cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB))
+                    tensor_face = transform(pil_face)
+                    faces.append(tensor_face)
+
         count += 1
+
     cap.release()
-
-    sequences = []
-    for i in range(len(frames) - sequence_length + 1):
-        seq = frames[i:i + sequence_length]
-        video_tensor = torch.stack(seq).unsqueeze(0)
-        sequences.append(video_tensor)
-
-    return sequences if sequences else None
+    return faces if faces else None
 
 
 # ----------------------------
@@ -307,12 +349,13 @@ if uploaded_file:
     gauge_placeholder = st.empty()
 
     transform = transforms.Compose([
-        transforms.Resize((224, 224)),
+        transforms.Resize((380, 380)),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
-    with st.spinner('🔍 Extracting frames and analyzing...'):
+    with st.spinner('🔍 Extracting faces and analyzing...'):
         duration = 50
         start_time = time.time()
         while time.time() - start_time < duration:
@@ -322,17 +365,16 @@ if uploaded_file:
             gauge_placeholder.markdown(generate_gauge_html(0.0, override_angle=angle), unsafe_allow_html=True)
             time.sleep(0.1)
 
-        sequences = extract_sequences(video_path, transform, sequence_length=20, fps=3)
+        faces = extract_faces_from_video(video_path, transform, fps=7)
 
-        if sequences is None:
-            st.error("❌ Not enough frames to analyze. Try a longer video.")
+        if not faces or len(faces) < 6:
+            st.error("❌ Not enough faces detected. Try another video.")
         else:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             MODEL_PATH = "effi_bilstm_attention_faceswap_7fpsdfd.pth"
-            GDRIVE_ID = "1m7TTZO8N-SH7eGcVcY9v3gYSBLUYWomK"
-            GDRIVE_URL = f"https://drive.google.com/uc?id={GDRIVE_ID}"
-
             if not os.path.exists(MODEL_PATH):
+                GDRIVE_ID = "17sKoQZSYx8qPlUXJcAdRggUhViaVALqd"
+                GDRIVE_URL = f"https://drive.google.com/uc?id={GDRIVE_ID}"
                 with st.spinner("📥 Downloading model from Google Drive..."):
                     gdown.download(GDRIVE_URL, MODEL_PATH, quiet=False)
 
@@ -341,11 +383,18 @@ if uploaded_file:
             model.to(device)
             model.eval()
 
+            # Build overlapping sequences of 6
+            sequence_length = 6
+            sequences = []
+            for i in range(0, len(faces) - sequence_length + 1, sequence_length):
+                seq = torch.stack(faces[i:i + sequence_length]).unsqueeze(0)  # [1, 6, 3, 380, 380]
+                sequences.append(seq)
+
             probs = []
-            for sequence in sequences:
-                sequence = sequence.to(device)
-                with torch.no_grad():
-                    output = model(sequence)
+            with torch.no_grad():
+                for seq in sequences:
+                    seq = seq.to(device)
+                    output = model(seq)
                     prob = torch.sigmoid(output).item()
                     probs.append(prob)
 
@@ -354,10 +403,10 @@ if uploaded_file:
             if avg_prob > 0.5:
                 st.markdown("<h2 style='color:#e74c3c;'>🧠 Prediction: <b>Deepfake</b></h2>", unsafe_allow_html=True)
                 final_confidence = avg_prob
-                final_angle = -90 + (180 * 0.8)  # RED ZONE FIXED
+                final_angle = -90 + (180 * 0.8)
             else:
                 st.markdown("<h2 style='color:#2ecc71;'>🧠 Prediction: <b>Real</b></h2>", unsafe_allow_html=True)
-                final_confidence = random.uniform(0.90, 1.00)
-                final_angle = -90 + (180 * 0.2)  # GREEN ZONE FIXED
+                final_confidence = avg_prob
+                final_angle = -90 + (180 * 0.2)
 
             gauge_placeholder.markdown(generate_gauge_html(final_confidence, override_angle=final_angle), unsafe_allow_html=True)
