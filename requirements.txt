@@ -1,14 +1,16 @@
 # core app
-streamlit==1.11.1          # you can bump to the latest if you like
-altair==4.2.2              # charts (required by Streamlit’s ArrowAltairMixin)
-pandas==1.5.3              # altair relies on pandas DataFrame
+streamlit==1.11.1
+altair==4.2.2
+pandas==1.5.3
 numpy==1.24.3
 
-# deep‑learning stack (CPU wheels – smaller & cloud‑friendly)
-torch==2.0.0+cpu
-torchvision==0.15.0+cpu
-
+# deep-learning stack
+torch>=2.0.0
+torchvision>=0.15.0
 
 # video + imaging
 opencv-python-headless==4.7.0.68
 pillow==9.2.0
+
+# model downloader
+gdown
