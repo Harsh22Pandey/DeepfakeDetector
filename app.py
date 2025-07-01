@@ -1,4 +1,4 @@
- 
+
 # import streamlit as st
 # import torch
 # import torch.nn as nn
@@ -13,11 +13,12 @@
 # import time
 # import math
 # import random
+# import mediapipe as mp
 
 # st.set_page_config(layout="wide")
 
 # # ----------------------------
-# # Model Definition
+# # Model Definition (ResNet50 only)
 # # ----------------------------
 # class FaceSwapDetector(nn.Module):
 #     def __init__(self):
@@ -25,7 +26,6 @@
 #         weights = ResNet50_Weights.IMAGENET1K_V1
 #         self.model = resnet50(weights=weights)
 
-#         # Freeze all except layer4 and fc
 #         for name, param in self.model.named_parameters():
 #             if "layer4" in name or "fc" in name:
 #                 param.requires_grad = True
@@ -39,38 +39,66 @@
 #         )
 
 #     def forward(self, x):
-#         return self.model(x)  # logits
+#         return self.model(x)
 
 
 # # ----------------------------
-# # Extract Sequences
+# # Mediapipe-based Face Extraction
 # # ----------------------------
-# def extract_sequences(video_path, transform, sequence_length=20, fps=3):
+# def extract_faces_from_video(
+#     video_path,
+#     transform,
+#     fps=3,
+#     padding=20,
+#     resize_dim=(224, 224)
+# ):
+#     mp_face_detection = mp.solutions.face_detection
+#     detector = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.7)
+
 #     cap = cv2.VideoCapture(video_path)
-#     frames = []
+#     faces = []
 #     count = 0
 #     actual_fps = cap.get(cv2.CAP_PROP_FPS)
-#     interval = int(actual_fps // fps) if actual_fps > fps else 1
+#     interval = max(int(actual_fps // fps), 1)
 
 #     while cap.isOpened():
 #         ret, frame = cap.read()
 #         if not ret:
 #             break
+
 #         if count % interval == 0:
-#             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-#             image = Image.fromarray(frame)
-#             image = transform(image)
-#             frames.append(image)
+#             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+#             results = detector.process(rgb_frame)
+
+#             if results.detections:
+#                 ih, iw, _ = frame.shape
+#                 for detection in results.detections:
+#                     bboxC = detection.location_data.relative_bounding_box
+#                     x1 = int(bboxC.xmin * iw) - padding
+#                     y1 = int(bboxC.ymin * ih) - padding
+#                     x2 = int((bboxC.xmin + bboxC.width) * iw) + padding
+#                     y2 = int((bboxC.ymin + bboxC.height) * ih) + padding
+
+#                     x1 = max(0, x1)
+#                     y1 = max(0, y1)
+#                     x2 = min(iw - 1, x2)
+#                     y2 = min(ih - 1, y2)
+
+#                     face_crop = frame[y1:y2, x1:x2]
+#                     if face_crop.size == 0:
+#                         continue
+
+#                     if resize_dim:
+#                         face_crop = cv2.resize(face_crop, resize_dim)
+
+#                     pil_face = Image.fromarray(cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB))
+#                     tensor_face = transform(pil_face)
+#                     faces.append(tensor_face)
+
 #         count += 1
+
 #     cap.release()
-
-#     sequences = []
-#     for i in range(len(frames) - sequence_length + 1):
-#         seq = frames[i:i + sequence_length]
-#         video_tensor = torch.stack(seq).unsqueeze(0)
-#         sequences.append(video_tensor)
-
-#     return sequences if sequences else None
+#     return faces if faces else None
 
 
 # # ----------------------------
@@ -132,8 +160,8 @@
 #         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 #     ])
 
-#     with st.spinner('🔍 Extracting frames and analyzing...'):
-#         duration = 50
+#     with st.spinner('🔍 Extracting faces and analyzing...'):
+#         duration = 100
 #         start_time = time.time()
 #         while time.time() - start_time < duration:
 #             t = time.time() - start_time
@@ -142,10 +170,10 @@
 #             gauge_placeholder.markdown(generate_gauge_html(0.0, override_angle=angle), unsafe_allow_html=True)
 #             time.sleep(0.1)
 
-#         sequences = extract_sequences(video_path, transform, sequence_length=20, fps=3)
+#         faces = extract_faces_from_video(video_path, transform, fps=7)
 
-#         if sequences is None:
-#             st.error("❌ Not enough frames to analyze. Try a longer video.")
+#         if faces is None:
+#             st.error("❌ No faces detected. Try another video.")
 #         else:
 #             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #             MODEL_PATH = "resnet50_only_dfd7fps.pth"
@@ -162,31 +190,29 @@
 #             model.eval()
 
 #             probs = []
-#             for sequence in sequences:
-#                 frames = sequence.squeeze(0)  # [T, C, H, W]
-#                 for frame in frames:
-#                     frame = frame.unsqueeze(0).to(device)
-#                     with torch.no_grad():
-#                         output = model(frame)
-#                         prob = torch.sigmoid(output).item()
-#                         probs.append(prob)
+#             for face in faces:
+#                 face = face.unsqueeze(0).to(device)
+#                 with torch.no_grad():
+#                     output = model(face)
+#                     prob = torch.sigmoid(output).item()
+#                     probs.append(prob)
 
 #             avg_prob = np.mean(probs)
 
 #             if avg_prob > 0.5:
 #                 st.markdown("<h2 style='color:#e74c3c;'>🧠 Prediction: <b>Deepfake</b></h2>", unsafe_allow_html=True)
 #                 final_confidence = avg_prob
-#                 final_angle = -90 + (180 * 0.8)  # RED ZONE FIXED
+#                 final_angle = -90 + (180 * 0.8)
 #             else:
 #                 st.markdown("<h2 style='color:#2ecc71;'>🧠 Prediction: <b>Real</b></h2>", unsafe_allow_html=True)
 #                 final_confidence = random.uniform(0.90, 1.00)
-#                 final_angle = -90 + (180 * 0.2)  # GREEN ZONE FIXED
+#                 final_angle = -90 + (180 * 0.2)
 
 #             gauge_placeholder.markdown(generate_gauge_html(final_confidence, override_angle=final_angle), unsafe_allow_html=True)
 
 
 
-
+# directly use .pth from here, don't use it from gdrive
 
 import streamlit as st
 import torch
@@ -198,13 +224,13 @@ import cv2
 from PIL import Image
 import numpy as np
 import os
-import gdown
 import time
 import math
 import random
 import mediapipe as mp
 
 st.set_page_config(layout="wide")
+
 
 # ----------------------------
 # Model Definition (ResNet50 only)
@@ -239,7 +265,8 @@ def extract_faces_from_video(
     transform,
     fps=3,
     padding=20,
-    resize_dim=(224, 224)
+    resize_dim=(224, 224),
+    max_faces=30
 ):
     mp_face_detection = mp.solutions.face_detection
     detector = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.7)
@@ -250,7 +277,7 @@ def extract_faces_from_video(
     actual_fps = cap.get(cv2.CAP_PROP_FPS)
     interval = max(int(actual_fps // fps), 1)
 
-    while cap.isOpened():
+    while cap.isOpened() and len(faces) < max_faces:
         ret, frame = cap.read()
         if not ret:
             break
@@ -350,51 +377,54 @@ if uploaded_file:
     ])
 
     with st.spinner('🔍 Extracting faces and analyzing...'):
-        duration = 100
+        # Animated gauge simulation (just for UI feedback)
+        animation_duration = 20
         start_time = time.time()
-        while time.time() - start_time < duration:
+        while time.time() - start_time < animation_duration:
             t = time.time() - start_time
             swing = 0.5 + 0.2 * math.sin(2 * math.pi * t / 5)
             angle = -90 + (180 * swing)
             gauge_placeholder.markdown(generate_gauge_html(0.0, override_angle=angle), unsafe_allow_html=True)
             time.sleep(0.1)
 
-        faces = extract_faces_from_video(video_path, transform, fps=7)
+        # Face extraction
+        faces = extract_faces_from_video(video_path, transform, fps=3)
 
         if faces is None:
             st.error("❌ No faces detected. Try another video.")
+            st.stop()
+
+        # Load model from local file
+        MODEL_PATH = "resnet50_only_dfd7fps.pth"
+        if not os.path.exists(MODEL_PATH):
+            st.error(f"❌ Model file not found: {MODEL_PATH}. Please put it in this directory.")
+            st.stop()
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = FaceSwapDetector()
+        model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+        model.to(device)
+        model.eval()
+
+        # Make predictions
+        probs = []
+        for face in faces:
+            face = face.unsqueeze(0).to(device)
+            with torch.no_grad():
+                output = model(face)
+                prob = torch.sigmoid(output).item()
+                probs.append(prob)
+
+        avg_prob = np.mean(probs)
+
+        # Show final prediction
+        if avg_prob > 0.5:
+            st.markdown("<h2 style='color:#e74c3c;'>🧠 Prediction: <b>Deepfake</b></h2>", unsafe_allow_html=True)
+            final_confidence = avg_prob
+            final_angle = -90 + (180 * 0.8)
         else:
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            MODEL_PATH = "resnet50_only_dfd7fps.pth"
-            GDRIVE_ID = "1_2APX1fjrJKTi3GRQ7lNEo8Xbje74A4D"
-            GDRIVE_URL = f"https://drive.google.com/uc?id={GDRIVE_ID}"
+            st.markdown("<h2 style='color:#2ecc71;'>🧠 Prediction: <b>Real</b></h2>", unsafe_allow_html=True)
+            final_confidence = random.uniform(0.90, 1.00)
+            final_angle = -90 + (180 * 0.2)
 
-            if not os.path.exists(MODEL_PATH):
-                with st.spinner("📥 Downloading model from Google Drive..."):
-                    gdown.download(GDRIVE_URL, MODEL_PATH, quiet=False)
-
-            model = FaceSwapDetector()
-            model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
-            model.to(device)
-            model.eval()
-
-            probs = []
-            for face in faces:
-                face = face.unsqueeze(0).to(device)
-                with torch.no_grad():
-                    output = model(face)
-                    prob = torch.sigmoid(output).item()
-                    probs.append(prob)
-
-            avg_prob = np.mean(probs)
-
-            if avg_prob > 0.5:
-                st.markdown("<h2 style='color:#e74c3c;'>🧠 Prediction: <b>Deepfake</b></h2>", unsafe_allow_html=True)
-                final_confidence = avg_prob
-                final_angle = -90 + (180 * 0.8)
-            else:
-                st.markdown("<h2 style='color:#2ecc71;'>🧠 Prediction: <b>Real</b></h2>", unsafe_allow_html=True)
-                final_confidence = random.uniform(0.90, 1.00)
-                final_angle = -90 + (180 * 0.2)
-
-            gauge_placeholder.markdown(generate_gauge_html(final_confidence, override_angle=final_angle), unsafe_allow_html=True)
+        gauge_placeholder.markdown(generate_gauge_html(final_confidence, override_angle=final_angle), unsafe_allow_html=True)
