@@ -1,4 +1,5 @@
 
+
 # import streamlit as st
 # import torch
 # import torch.nn as nn
@@ -9,10 +10,8 @@
 # from PIL import Image
 # import numpy as np
 # import os
-# import gdown
 # import time
 # import math
-# import random
 # import mediapipe as mp
 
 # st.set_page_config(layout="wide")
@@ -41,7 +40,6 @@
 #     def forward(self, x):
 #         return self.model(x)
 
-
 # # ----------------------------
 # # Mediapipe-based Face Extraction
 # # ----------------------------
@@ -50,7 +48,8 @@
 #     transform,
 #     fps=3,
 #     padding=20,
-#     resize_dim=(224, 224)
+#     resize_dim=(224, 224),
+#     max_faces=30
 # ):
 #     mp_face_detection = mp.solutions.face_detection
 #     detector = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.7)
@@ -61,7 +60,7 @@
 #     actual_fps = cap.get(cv2.CAP_PROP_FPS)
 #     interval = max(int(actual_fps // fps), 1)
 
-#     while cap.isOpened():
+#     while cap.isOpened() and len(faces) < max_faces:
 #         ret, frame = cap.read()
 #         if not ret:
 #             break
@@ -100,7 +99,6 @@
 #     cap.release()
 #     return faces if faces else None
 
-
 # # ----------------------------
 # # Gauge Generator
 # # ----------------------------
@@ -126,7 +124,6 @@
 #     </div>
 #     """
 #     return html
-
 
 # # ----------------------------
 # # Streamlit UI
@@ -161,58 +158,70 @@
 #     ])
 
 #     with st.spinner('🔍 Extracting faces and analyzing...'):
-#         duration = 100
+#         # Animated gauge simulation
+#         animation_duration = 20
 #         start_time = time.time()
-#         while time.time() - start_time < duration:
+#         while time.time() - start_time < animation_duration:
 #             t = time.time() - start_time
 #             swing = 0.5 + 0.2 * math.sin(2 * math.pi * t / 5)
 #             angle = -90 + (180 * swing)
 #             gauge_placeholder.markdown(generate_gauge_html(0.0, override_angle=angle), unsafe_allow_html=True)
 #             time.sleep(0.1)
 
-#         faces = extract_faces_from_video(video_path, transform, fps=7)
+#         # Face extraction
+#         faces = extract_faces_from_video(video_path, transform, fps=3)
 
 #         if faces is None:
 #             st.error("❌ No faces detected. Try another video.")
+#             st.stop()
+
+#         # Load model from local file
+#         MODEL_PATH = "resnet50_only_dfd7fps.pth"
+#         if not os.path.exists(MODEL_PATH):
+#             st.error(f"❌ Model file not found: {MODEL_PATH}. Please put it in this directory.")
+#             st.stop()
+
+#         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#         model = FaceSwapDetector()
+#         model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+#         model.to(device)
+#         model.eval()
+
+#         # Make predictions
+#         probs = []
+#         for idx, face in enumerate(faces, 1):
+#             face = face.unsqueeze(0).to(device)
+#             with torch.no_grad():
+#                 output = model(face)
+#                 prob = torch.sigmoid(output).item()
+#                 probs.append(prob)
+
+#         avg_prob = np.mean(probs)
+
+#         # Show all per-face predictions
+#         st.subheader("Per-Face Confidence Scores")
+#         for i, p in enumerate(probs, 1):
+#             st.write(f"Face {i}: {p:.4f}")
+
+#         # Show average
+#         st.subheader("Final Average Probability Used for Classification")
+#         st.write(f"**Average Probability:** `{avg_prob:.4f}`")
+
+#         # Threshold logic explanation
+#         THRESHOLD = 0.5
+#         st.info(f"Classification threshold = `{THRESHOLD}`")
+#         if avg_prob < THRESHOLD:
+#             st.markdown("<h2 style='color:#e74c3c;'>🧠 Prediction: <b>Deepfake</b></h2>", unsafe_allow_html=True)
 #         else:
-#             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#             MODEL_PATH = "resnet50_only_dfd7fps.pth"
-#             GDRIVE_ID = "1_2APX1fjrJKTi3GRQ7lNEo8Xbje74A4D"
-#             GDRIVE_URL = f"https://drive.google.com/uc?id={GDRIVE_ID}"
+#             st.markdown("<h2 style='color:#2ecc71;'>🧠 Prediction: <b>Real</b></h2>", unsafe_allow_html=True)
 
-#             if not os.path.exists(MODEL_PATH):
-#                 with st.spinner("📥 Downloading model from Google Drive..."):
-#                     gdown.download(GDRIVE_URL, MODEL_PATH, quiet=False)
-
-#             model = FaceSwapDetector()
-#             model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
-#             model.to(device)
-#             model.eval()
-
-#             probs = []
-#             for face in faces:
-#                 face = face.unsqueeze(0).to(device)
-#                 with torch.no_grad():
-#                     output = model(face)
-#                     prob = torch.sigmoid(output).item()
-#                     probs.append(prob)
-
-#             avg_prob = np.mean(probs)
-
-#             if avg_prob > 0.5:
-#                 st.markdown("<h2 style='color:#e74c3c;'>🧠 Prediction: <b>Deepfake</b></h2>", unsafe_allow_html=True)
-#                 final_confidence = avg_prob
-#                 final_angle = -90 + (180 * 0.8)
-#             else:
-#                 st.markdown("<h2 style='color:#2ecc71;'>🧠 Prediction: <b>Real</b></h2>", unsafe_allow_html=True)
-#                 final_confidence = random.uniform(0.90, 1.00)
-#                 final_angle = -90 + (180 * 0.2)
-
-#             gauge_placeholder.markdown(generate_gauge_html(final_confidence, override_angle=final_angle), unsafe_allow_html=True)
+#         # Always show gauge using true avg_prob
+#         final_confidence = avg_prob
+#         final_angle = -90 + (180 * avg_prob)
+#         gauge_placeholder.markdown(generate_gauge_html(final_confidence, override_angle=final_angle), unsafe_allow_html=True)
 
 
 
-# directly use .pth from here, don't use it from gdrive
 
 
 import streamlit as st
@@ -227,11 +236,9 @@ import numpy as np
 import os
 import time
 import math
-import random
 import mediapipe as mp
 
 st.set_page_config(layout="wide")
-
 
 # ----------------------------
 # Model Definition (ResNet50 only)
@@ -256,7 +263,6 @@ class FaceSwapDetector(nn.Module):
 
     def forward(self, x):
         return self.model(x)
-
 
 # ----------------------------
 # Mediapipe-based Face Extraction
@@ -317,7 +323,6 @@ def extract_faces_from_video(
     cap.release()
     return faces if faces else None
 
-
 # ----------------------------
 # Gauge Generator
 # ----------------------------
@@ -343,7 +348,6 @@ def generate_gauge_html(confidence, override_angle=None):
     </div>
     """
     return html
-
 
 # ----------------------------
 # Streamlit UI
@@ -378,7 +382,7 @@ if uploaded_file:
     ])
 
     with st.spinner('🔍 Extracting faces and analyzing...'):
-        # Animated gauge simulation (just for UI feedback)
+        # Animated gauge simulation
         animation_duration = 20
         start_time = time.time()
         while time.time() - start_time < animation_duration:
@@ -409,7 +413,7 @@ if uploaded_file:
 
         # Make predictions
         probs = []
-        for face in faces:
+        for idx, face in enumerate(faces, 1):
             face = face.unsqueeze(0).to(device)
             with torch.no_grad():
                 output = model(face)
@@ -418,14 +422,24 @@ if uploaded_file:
 
         avg_prob = np.mean(probs)
 
-        # Show final prediction
-        if avg_prob > 0.5:
+        # Show all per-face predictions
+        st.subheader("Per-Face Confidence Scores")
+        for i, p in enumerate(probs, 1):
+            st.write(f"Face {i}: {p:.4f}")
+
+        # Show average
+        st.subheader("Final Average Probability Used for Classification")
+        st.write(f"**Average Probability:** `{avg_prob:.4f}`")
+
+        # Threshold logic explanation
+        THRESHOLD = 0.5
+        st.info(f"Classification threshold = `{THRESHOLD}`")
+        if avg_prob < THRESHOLD:
             st.markdown("<h2 style='color:#e74c3c;'>🧠 Prediction: <b>Deepfake</b></h2>", unsafe_allow_html=True)
-            final_confidence = avg_prob
-            final_angle = -90 + (180 * 0.8)
         else:
             st.markdown("<h2 style='color:#2ecc71;'>🧠 Prediction: <b>Real</b></h2>", unsafe_allow_html=True)
-            final_confidence = random.uniform(0.90, 1.00)
-            final_angle = -90 + (180 * 0.2)
 
+        # Show gauge using inverted mapping for color zones
+        final_confidence = avg_prob
+        final_angle = -90 + (180 * (1 - avg_prob))
         gauge_placeholder.markdown(generate_gauge_html(final_confidence, override_angle=final_angle), unsafe_allow_html=True)
