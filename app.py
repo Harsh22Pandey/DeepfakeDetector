@@ -352,17 +352,44 @@ def generate_gauge_html(confidence, override_angle=None):
 # ----------------------------
 # Streamlit UI
 # ----------------------------
-st.markdown("<h1 style='text-align: center; color: tomato;'>Deepfake Video Detector</h1>", unsafe_allow_html=True)
+st.markdown("""
+    <h1 style='text-align: center; color: tomato; font-size: 3.5em; margin-bottom: 40px;margin-top:-5px;'>
+        Deepfake Video Detector
+    </h1>
+""", unsafe_allow_html=True)
+
 
 col1, col2 = st.columns([1, 1])
 with col1:
     st.video("/workspaces/DeepfakeDetector/Trump_and_Navalny_1080p.mp4")
 with col2:
     st.markdown("""
-    <h3>Enemy at the Gates</h3>
-    <p>Cybersecurity is facing an emerging threat known as deepfakes. 
-    Malicious uses of AI-generated synthetic media could become one of the most powerful cyber weapons.</p>
-    """, unsafe_allow_html=True)
+    <div style="
+        background-color: #1e1e1e;
+        padding: 20px;
+        border-radius: 12px;
+        border-left: 6px solid tomato;
+        color: #f1f1f1;
+        font-family: 'Segoe UI', sans-serif;
+        font-size: 1.1em;
+        line-height: 1.6;
+    ">
+        <h3 style="color: tomato;">Enemy at the Gates</h3>
+        <p>
+            Cybersecurity is facing an alarming new threat: <b>deepfakes</b> — hyper-realistic synthetic media created by AI.
+            As this technology becomes more accessible, so do the dangers it presents.
+        </p>
+        <p>
+            <i>Fake personas, manipulated videos, and voice clones</i> are already being used to deceive, defraud, and disrupt.
+            In the wrong hands, deepfakes could become one of the most potent cyber weapons of the 21st century.
+        </p>
+        <p>
+            This tool helps detect such manipulations before they can cause real-world damage.
+            Stay alert. Stay informed. <span style="color: lightgreen;"><b>Stay protected.</b></span>
+        </p>
+    </div>
+""", unsafe_allow_html=True)
+
 
 uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi", "mov"])
 
